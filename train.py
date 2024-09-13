@@ -28,11 +28,14 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
+from custom_classes import *
+
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene(dataset, gaussians)
+    scene = Scene(dataset, gaussians, subsetParams, shuffle = False) # Gets a subset if possible. Also filters points
+
     gaussians.training_setup(opt)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -43,6 +46,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     iter_start = torch.cuda.Event(enable_timing = True)
     iter_end = torch.cuda.Event(enable_timing = True)
+
+
+    #We save our train and test datasets
+    camSubset = cameras_Subset()
+    camSubset.TrainIndices = subsetParams.TrainIndices
+    camSubset.TestIndices = subsetParams.TestIndices
+    camSubset.saveCameras(dataset.model_path)
+    GetNewCamera = NewCameras(scene)
+
 
     viewpoint_stack = None
     ema_loss_for_log = 0.0
@@ -263,8 +275,22 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
+    parser.add_argument("--cameras", nargs="+", type=int, default=None)
+    parser.add_argument("--depths", type=str, default='true', choices=['true', 'false'])
+    parser.add_argument("--TVL", type=float, default=1.0)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
+    
+    #New arguments
+    myParams = MyParams()
+    myParams.SceneIndices = None
+    myParams.MakeTest = True
+    myParams.AllPoints = False
+
+    myParams.TrainIndices = args.cameras
+    myParams.UseDepths = args.depths.lower() == "true"
+    myParams.L_TVL = args.TVL
+    
     
     print("Optimizing " + args.model_path)
 

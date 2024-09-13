@@ -23,6 +23,10 @@ from plyfile import PlyData, PlyElement
 from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
 
+from custom_classes import MyParams
+from random import sample
+
+
 class CameraInfo(NamedTuple):
     uid: int
     R: np.array
@@ -34,6 +38,7 @@ class CameraInfo(NamedTuple):
     image_name: str
     width: int
     height: int
+    point3D_ids: np.array # Added
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -99,7 +104,8 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
         image = Image.open(image_path)
 
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                              image_path=image_path, image_name=image_name, width=width, height=height)
+                              image_path=image_path, image_name=image_name, width=width, height=height,
+                              point3D_ids=extr.point3D_ids) # Added
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
@@ -107,14 +113,16 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
 def fetchPly(path):
     plydata = PlyData.read(path)
     vertices = plydata['vertex']
+    ids = np.array(vertices['id']) # Added
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
     colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
     normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
-    return BasicPointCloud(points=positions, colors=colors, normals=normals)
+    return ids, BasicPointCloud(points=positions, colors=colors, normals=normals) # Added
 
 def storePly(path, xyz, rgb):
     # Define the dtype for the structured array
-    dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+    dtype = [('id', 'i4'), # Added
+            ('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
             ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4'),
             ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
     
@@ -145,13 +153,67 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
     cam_infos_unsorted = readColmapCameras(cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, images_folder=os.path.join(path, reading_dir))
     cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name)
 
+
+    # -------------------- We inject our code here -----------------------
+    #This checks what actions should be performed given the parameters we provided
+
+    if params.SceneIndices :
+        SceneIndices = params.SceneIndices
+    elif params.N_cameras  > 0:
+        SceneIndices = [randint(0, len(cam_infos)) for _ in range(min(len(cam_infos)-1, params.N_cameras))]
+    else:
+        SceneIndices = [idx for idx in range(len(cam_infos))]
+        
+    CameraSubset = []
+    for idx in SceneIndices:
+        CameraSubset.append(cam_infos[idx])
+
+    #print(f"Number of cameras: {len(CameraSubset)}")
+    #print(f"Working with cameras {SceneIndices}")
+
+
+    #Construct the train and test sets
+    train_cam_infos = []
+    test_cam_infos = []
+
+    trainIndices = []
+    testIndices = []
+
+    if params.MakeTest:
+        if params.TrainIndices:
+            for idx in params.TrainIndices:
+                train_cam_infos.append(CameraSubset[idx]) #Could change to indices of cameras and not of the subset
+                trainIndices.append(SceneIndices[idx])
+        else:
+            trainSamples = int(len(SceneIndices) * params.Percentage)
+            trainIndices = sample(SceneIndices, trainSamples)
+            trainIndices.sort()
+            for idx in trainIndices:
+                train_cam_infos.append(cam_infos[idx])
+
+        test_cam_infos = [cam_infos[idx] for idx in SceneIndices if idx not in trainIndices]
+        testIndices = [_ for _ in SceneIndices if _ not in trainIndices]
+
+    else:
+        train_cam_infos = cam_infos
+        trainIndices = SceneIndices
+
+        test_cam_infos = []
+
+    params.TrainIndices = trainIndices
+    params.TestIndices = testIndices
+
+
+    # ---------------------- End of our Code -------------------------
+
+    '''
     if eval:
         train_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % llffhold != 0]
         test_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % llffhold == 0]
     else:
         train_cam_infos = cam_infos
         test_cam_infos = []
-
+    '''
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
     ply_path = os.path.join(path, "sparse/0/points3D.ply")
@@ -160,14 +222,40 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
     if not os.path.exists(ply_path):
         print("Converting point3d.bin to .ply, will happen only the first time you open the scene.")
         try:
-            xyz, rgb, _ = read_points3D_binary(bin_path)
+            ids, xyz, rgb, _ = read_points3D_binary(bin_path)
         except:
-            xyz, rgb, _ = read_points3D_text(txt_path)
+            ids, xyz, rgb, _ = read_points3D_text(txt_path)
         storePly(ply_path, xyz, rgb)
     try:
-        pcd = fetchPly(ply_path)
+        ids, pcd = fetchPly(ply_path)
     except:
-        pcd = None
+        ids, pcd = None
+
+    # ----------------- Our code seasons 2. Filters the points -------------------
+    if not params.AllPoints:
+        #We filter the points. They are still in the order we read it from the original file
+        #We save only the ones seen by 3 or more cameras
+        points_to_keep = set()
+        point_counts = {}
+        for ci in train_cam_infos:
+            for point_id in ci.point3D_ids:
+                    if point_id in point_counts:
+                        point_counts[point_id] += 1
+                    else:
+                        point_counts[point_id] = 1
+
+        # Filter points seen by at least 3 cameras
+        points_to_keep = {point_id for point_id, count in point_counts.items() if count >= 3}
+
+        filtered_points  = [pcd.points[i]  for i, Id in enumerate(ids) if Id in points_to_keep]
+        filtered_colors  = [pcd.colors[i]  for i, Id in enumerate(ids) if Id in points_to_keep]
+        filtered_normals = [pcd.normals[i] for i, Id in enumerate(ids) if Id in points_to_keep]
+
+        pcd = BasicPointCloud(points=filtered_points, colors=filtered_colors, normals=filtered_normals)
+
+
+    # -------------------- End of our code 2 -----------------
+
 
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
