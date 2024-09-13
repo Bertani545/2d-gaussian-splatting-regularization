@@ -11,3 +11,5 @@ data
 eval
 *.npz
 **/tmp
+dataset
+results
