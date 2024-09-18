@@ -72,3 +72,13 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
     else:
         return ssim_map.mean(1).mean(1).mean(1)
 
+def TVL(img):
+
+    channels, height, width = img.size()
+   
+    assert channels == 1, "Input image must be gray scale"
+
+    tv_h = (img[:,1:,:] - img[:,:-1,:]).abs().sum()
+    tv_w = (img[:,:,1:] - img[:,:,:-1]).abs().sum()
+
+    return (tv_h + tv_w).mean()

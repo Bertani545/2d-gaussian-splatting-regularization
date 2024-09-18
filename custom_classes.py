@@ -73,7 +73,7 @@ class NewCameras():
         
         new_camera.recalculate()
         return new_camera
-
+'''
 class MiniCam_FromCam:
     def __init__(self, cam, scale=1.0):
         self.image_width = cam.image_width
@@ -98,9 +98,9 @@ class MiniCam_FromCam:
         self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1).cuda()
         self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
         self.camera_center = self.world_view_transform.inverse()[3, :3]
-
+'''
 class MyParams():
-    def __init__(self, sceneIndices = None, n_cameras = -1, test = False, trainIndices = None, percentage = 1.0, allPoints = False, useDepths = True, lbd = 1.0):
+    def __init__(self, sceneIndices = None, n_cameras = -1, test = False, trainIndices = None, percentage = 1.0, allPoints = False, useNewRegularization = False, lbd = 1.0):
         self.SceneIndices = sceneIndices.sort() if sceneIndices else None
         self.N_cameras = n_cameras
 
@@ -108,7 +108,7 @@ class MyParams():
         self.Percentage = max(0.0, min(percentage, 1.0))
         self.AllPoints = allPoints
 
-        self.UseDepths = useDepths
+        self.UseNewRegularization = useNewRegularization
         self.L_TVL = lbd
 
         #Modified when starting an scene

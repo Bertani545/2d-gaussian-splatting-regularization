@@ -12,7 +12,7 @@
 import os
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim
+from utils.loss_utils import l1_loss, ssim, TVL
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -73,33 +73,102 @@ def training(dataset, opt, pipe, subsetParams, testing_iterations, saving_iterat
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
-        # Pick a random Camera
-        if not viewpoint_stack:
-            viewpoint_stack = scene.getTrainCameras().copy()
-        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
-        
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-        
-        gt_image = viewpoint_cam.original_image.cuda()
-        Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        
-        # regularization
-        lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
-        lambda_dist = opt.lambda_dist if iteration > 3000 else 0.0
 
-        rend_dist = render_pkg["rend_dist"]
-        rend_normal  = render_pkg['rend_normal']
-        surf_normal = render_pkg['surf_normal']
-        normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
-        normal_loss = lambda_normal * (normal_error).mean()
-        dist_loss = lambda_dist * (rend_dist).mean()
+        if subsetParams.UseNewRegularization:
 
-        # loss
-        total_loss = loss + dist_loss + normal_loss
+            create_new = True if iteration % 10 == 0 and iteration > 1000 else False
+            if create_new:
+                #Create new camera
+                viewpoint_cam = GetNewCamera()
+            else:
+                if not viewpoint_stack:
+                    viewpoint_stack = scene.getTrainCameras().copy()
+                viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+            
+            render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+            image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+            
+
+            rend_dist = render_pkg["rend_dist"]
+            rend_normal  = render_pkg['rend_normal']
+            surf_normal = render_pkg['surf_normal']
+
+            # Loss. Depends on camera used
+            if create_new:
+                # Ours 
+                loss = subsetParams.L_TVL * TVL(depths)
+                Ll1 = 0
+
+                # regularization
+                lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
+                lambda_dist = opt.lambda_dist if iteration > 3000 else 0.0
+
+                normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
+                normal_loss = lambda_normal * (normal_error).mean()
+                dist_loss = lambda_dist * (rend_dist).mean()
+
+                # loss
+                total_loss = loss + dist_loss + normal_loss
+                
+            else:
+                gt_image = viewpoint_cam.original_image.cuda()
+                Ll1 = l1_loss(image, gt_image)
+                loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+
+                # Our regularization
+                loss += subsetParams.L_TVL * TVL(depths)
+
+                # regularization
+                lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
+                lambda_dist = opt.lambda_dist if iteration > 3000 else 0.0
+
+                normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
+                normal_loss = lambda_normal * (normal_error).mean()
+                dist_loss = lambda_dist * (rend_dist).mean()
+
+                # loss
+                total_loss = loss + dist_loss + normal_loss
+
+
+                #loss = TVL(depths)
+                if iteration == opt.iterations:
+                    print(f"TVL = {TVL(depths)}, L1 = {Ll1}, ssim = {ssim(image, gt_image)}")
+
+
+        else:
+
+
+            # Pick a random Camera
+            if not viewpoint_stack:
+                viewpoint_stack = scene.getTrainCameras().copy()
+            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+            
+            render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+            image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+            
+            gt_image = viewpoint_cam.original_image.cuda()
+            Ll1 = l1_loss(image, gt_image)
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+            
+            # regularization
+            lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
+            lambda_dist = opt.lambda_dist if iteration > 3000 else 0.0
+
+            rend_dist = render_pkg["rend_dist"]
+            rend_normal  = render_pkg['rend_normal']
+            surf_normal = render_pkg['surf_normal']
+            normal_error = (1 - (rend_normal * surf_normal).sum(dim=0))[None]
+            normal_loss = lambda_normal * (normal_error).mean()
+            dist_loss = lambda_dist * (rend_dist).mean()
+
+            # loss
+            total_loss = loss + dist_loss + normal_loss
         
         total_loss.backward()
+
+
+
+
 
         iter_end.record()
 
@@ -276,7 +345,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     parser.add_argument("--cameras", nargs="+", type=int, default=None)
-    parser.add_argument("--depths", type=str, default='true', choices=['true', 'false'])
+    parser.add_argument("--new_regularization", type=str, default='false', choices=['true', 'false'])
     parser.add_argument("--TVL", type=float, default=1.0)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
@@ -288,7 +357,7 @@ if __name__ == "__main__":
     myParams.AllPoints = False
 
     myParams.TrainIndices = args.cameras
-    myParams.UseDepths = args.depths.lower() == "true"
+    myParams.UseNewRegularization = new_regularization.lower() == "true"
     myParams.L_TVL = args.TVL
     
     
