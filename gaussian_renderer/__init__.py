@@ -94,7 +94,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     else:
         colors_precomp = override_color
     
-    rendered_image, radii, allmap = rasterizer(
+    rendered_image, radii, allmap, our_Depth, = rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
@@ -153,6 +153,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             'rend_dist': render_dist,
             'surf_depth': surf_depth,
             'surf_normal': surf_normal,
+            "depths": our_Depth,
     })
 
     return rets

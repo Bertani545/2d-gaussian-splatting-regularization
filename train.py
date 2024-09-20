@@ -92,7 +92,7 @@ def training(dataset, opt, pipe, subsetParams, testing_iterations, saving_iterat
             rend_dist = render_pkg["rend_dist"]
             rend_normal  = render_pkg['rend_normal']
             surf_normal = render_pkg['surf_normal']
-            depths = render_pkg['surf_depth']
+            depths = render_pkg['depths']
 
             # Loss. Depends on camera used
             if create_new:
