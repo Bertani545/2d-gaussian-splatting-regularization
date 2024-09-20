@@ -92,6 +92,7 @@ def training(dataset, opt, pipe, subsetParams, testing_iterations, saving_iterat
             rend_dist = render_pkg["rend_dist"]
             rend_normal  = render_pkg['rend_normal']
             surf_normal = render_pkg['surf_normal']
+            depths = render_pkg['surf_depth']
 
             # Loss. Depends on camera used
             if create_new:
@@ -357,7 +358,7 @@ if __name__ == "__main__":
     myParams.AllPoints = False
 
     myParams.TrainIndices = args.cameras
-    myParams.UseNewRegularization = new_regularization.lower() == "true"
+    myParams.UseNewRegularization = args.new_regularization.lower() == "true"
     myParams.L_TVL = args.TVL
     
     
