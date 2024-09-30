@@ -98,7 +98,7 @@ class _RasterizeGaussians(torch.autograd.Function):
         return color, radii, depth, ourDepth
 
     @staticmethod
-    def backward(ctx, grad_out_color, grad_radii, grad_depth):
+    def backward(ctx, grad_out_color, grad_radii, grad_depth, _):
 
         # Restore necessary values from context
         num_rendered = ctx.num_rendered

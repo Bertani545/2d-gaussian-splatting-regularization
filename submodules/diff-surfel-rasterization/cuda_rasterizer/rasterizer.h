@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2023, Inria
  * GRAPHDECO research group, https://team.inria.fr/graphdeco
@@ -50,6 +51,7 @@ namespace CudaRasterizer
 			const bool prefiltered,
 			float* out_color,
 			float* out_others,
+                        float* out_depths,
 			int* radii = nullptr,
 			bool debug = false);
 

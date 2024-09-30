@@ -13,6 +13,8 @@ import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 from math import exp
+import cv2 as cv
+import numpy as np
 
 def l1_loss(network_output, gt):
     return torch.abs((network_output - gt)).mean()
@@ -72,13 +74,23 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
     else:
         return ssim_map.mean(1).mean(1).mean(1)
 
-def TVL(img):
+def TVL(img, depths):
 
-    channels, height, width = img.size()
-   
-    assert channels == 1, "Input image must be gray scale"
+    channels, height, width = depths.size()
 
-    tv_h = (img[:,1:,:] - img[:,:-1,:]).abs().sum()
-    tv_w = (img[:,:,1:] - img[:,:,:-1]).abs().sum()
+    if img is not None:
+        gray_img = 0.299 * img[0, :, :] + 0.587 * img[1, :, :] + 0.114 * img[2, :, :]
+        img_np = gray_img.detach().cpu().numpy();
+        img_np = np.squeeze(img_np)
+        img_np = (img_np * 255).astype(np.uint8)
+        edges = cv.Canny(img_np, 10, 50)
+        mask = 1.0 - (torch.tensor(edges, dtype = torch.float32)/ 255.0)
+        mask = mask.cuda().unsqueeze(0)
+    else:
+        mask = torch.ones_like(depths)
+    # assert channels == 1, "Input image must be gray scale"
+
+    tv_h = ((depths[:,1:,:] - depths[:,:-1,:]).abs()*mask[:,1:,:]).sum()
+    tv_w = ((depths[:,:,1:] - depths[:,:,:-1]).abs()*mask[:,:,1:]).sum()
 
     return (tv_h + tv_w).mean()

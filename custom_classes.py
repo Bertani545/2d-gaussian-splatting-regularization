@@ -34,8 +34,10 @@ def rodrigues_Matrix(axis, c, s):
     return mat
 
 
-class NewCameras():
+class NewCameras(nn.Module):
     def __init__(self, scene, res = 1.0):
+        super(NewCameras,  self).__init__()
+
         self.pointsCenter = torch.mean(scene.gaussians._xyz, dim=0).detach().cpu().numpy()
 
         positions = np.array([camera.T for camera in scene.train_cameras[res]])
@@ -74,8 +76,10 @@ class NewCameras():
         new_camera.recalculate()
         return new_camera
 
-class MiniCam_FromCam:
+class MiniCam_FromCam(nn.Module):
     def __init__(self, cam, scale=1.0):
+
+        super(MiniCam_FromCam, self).__init__()
         self.image_width = cam.image_width
         self.image_height = cam.image_height    
         self.FoVy = cam.FoVy

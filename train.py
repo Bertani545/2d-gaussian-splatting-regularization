@@ -76,7 +76,7 @@ def training(dataset, opt, pipe, subsetParams, testing_iterations, saving_iterat
 
         if subsetParams.UseNewRegularization:
 
-            create_new = True if iteration % 10 == 0 and iteration > 1000 else False
+            create_new = True if iteration % 250 == 0 and iteration > 3000 else False
             if create_new:
                 #Create new camera
                 viewpoint_cam = GetNewCamera()
@@ -97,7 +97,8 @@ def training(dataset, opt, pipe, subsetParams, testing_iterations, saving_iterat
             # Loss. Depends on camera used
             if create_new:
                 # Ours 
-                loss = subsetParams.L_TVL * TVL(depths)
+                lbd_tvl = subsetParams.L_TVL if iteration > 3000 else 0.0
+                tvl_loss = subsetParams.L_TVL * TVL(None, depths)
                 Ll1 = 0
 
                 # regularization
@@ -109,7 +110,7 @@ def training(dataset, opt, pipe, subsetParams, testing_iterations, saving_iterat
                 dist_loss = lambda_dist * (rend_dist).mean()
 
                 # loss
-                total_loss = loss + dist_loss + normal_loss
+                total_loss = dist_loss + normal_loss + tvl_loss
                 
             else:
                 gt_image = viewpoint_cam.original_image.cuda()
@@ -117,7 +118,8 @@ def training(dataset, opt, pipe, subsetParams, testing_iterations, saving_iterat
                 loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
 
                 # Our regularization
-                loss += subsetParams.L_TVL * TVL(depths)
+                lbd_tvl = subsetParams.L_TVL if iteration > 3000 else 0.0
+                tvl_loss = subsetParams.L_TVL * TVL(gt_image, depths)
 
                 # regularization
                 lambda_normal = opt.lambda_normal if iteration > 7000 else 0.0
@@ -128,12 +130,12 @@ def training(dataset, opt, pipe, subsetParams, testing_iterations, saving_iterat
                 dist_loss = lambda_dist * (rend_dist).mean()
 
                 # loss
-                total_loss = loss + dist_loss + normal_loss
+                total_loss = loss + dist_loss + normal_loss + tvl_loss
 
 
                 #loss = TVL(depths)
-                if iteration == opt.iterations:
-                    print(f"TVL = {TVL(depths)}, L1 = {Ll1}, ssim = {ssim(image, gt_image)}")
+                #if iteration == opt.iterations:
+                #    print(f"TVL = {TVL(depths)}, L1 = {Ll1}, ssim = {ssim(image, gt_image)}")
 
 
         else:

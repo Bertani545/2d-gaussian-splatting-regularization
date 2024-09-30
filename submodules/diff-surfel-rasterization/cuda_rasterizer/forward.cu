@@ -478,7 +478,8 @@ void FORWARD::render(
 		n_contrib,
 		bg_color,
 		out_color,
-		out_others);
+		out_others,
+		out_depths);
 }
 
 void FORWARD::preprocess(int P, int D, int M,
